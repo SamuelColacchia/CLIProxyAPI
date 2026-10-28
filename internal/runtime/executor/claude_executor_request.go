@@ -1938,6 +1938,7 @@ func remapOAuthToolNamesWithBatchedEdits(body []byte, mcpAliases claudeMCPAliasO
 			return true
 		})
 		recordPassthroughMCPTools(recordRename, forwardMap, passthroughMCPTools)
+		recordDeclaredServerTools(recordRename, forwardMap, protectedNames)
 	}
 
 	rewriteName := func(name string) (string, bool) {
@@ -2224,6 +2225,7 @@ func remapOAuthToolNamesWithOptionsDoc(doc *ojson.Doc, mcpAliases claudeMCPAlias
 			return true
 		})
 		recordPassthroughMCPTools(recordRename, forwardMap, passthroughMCPTools)
+		recordDeclaredServerTools(recordRename, forwardMap, protectedNames)
 	}
 
 	rewriteName := func(name string) (string, bool) {
@@ -2466,8 +2468,11 @@ func newClaudeMCPAliasResolver(reverseMap map[string]string) claudeMCPAliasResol
 		if alias == original {
 			// Caller-owned MCP tool recorded for exact passthrough and fallback hybrid
 			// recovery. It must not register a virtual server or take part in fuzzy
-			// client-tool alias recovery.
-			resolver.passthroughs = append(resolver.passthroughs, original)
+			// client-tool alias recovery. Other identity entries are declared server
+			// tools; the exact match in resolve already forwards them unchanged.
+			if helps.IsClaudeMCPToolName(original) {
+				resolver.passthroughs = append(resolver.passthroughs, original)
+			}
 			continue
 		}
 		parts, ok := parseClaudeMCPAlias(alias)
@@ -2488,28 +2493,27 @@ func newClaudeMCPAliasResolver(reverseMap map[string]string) claudeMCPAliasResol
 // "mcp__" ("<server>__<toolID>_<semantic>") or without the whole
 // "mcp__<server>__" prefix ("<toolID>_<semantic>") back to its original tool.
 // Names starting with "mcp__" and names the caller declared itself are never
-// rewritten, and only an exact, unique alias tail matches.
+// rewritten, and the name must match exactly one tool across both forms.
 func (resolver claudeMCPAliasResolver) restorePrefixlessAlias(name string) (string, bool) {
 	if name == "" || strings.HasPrefix(name, "mcp__") {
 		return "", false
 	}
+	candidates := make(map[string]struct{})
 	for _, entry := range resolver.aliases {
 		if entry.original == name {
 			return "", false
 		}
-	}
-	if original, ok := resolver.exact["mcp__"+name]; ok && original != "mcp__"+name {
-		return original, true
-	}
-	matchedOriginal := ""
-	matchCount := 0
-	for _, entry := range resolver.aliases {
-		if strings.TrimPrefix(entry.alias, "mcp__"+entry.parts.server+"__") == name {
-			matchedOriginal = entry.original
-			matchCount++
+		if entry.alias == "mcp__"+name || strings.TrimPrefix(entry.alias, "mcp__"+entry.parts.server+"__") == name {
+			candidates[entry.original] = struct{}{}
 		}
 	}
-	return matchedOriginal, matchCount == 1
+	if len(candidates) != 1 {
+		return "", false
+	}
+	for original := range candidates {
+		return original, true
+	}
+	return "", false
 }
 
 // restorePassthroughWrapped maps a tail that is exactly a declared caller-owned MCP
@@ -2569,6 +2573,21 @@ func recordPassthroughMCPTools(recordRename func(original, renamed string), forw
 	}
 	for _, name := range passthrough {
 		recordRename(name, name)
+	}
+}
+
+// recordDeclaredServerTools records declared server tools, which are never
+// aliased, as identity entries. The response resolver's exact match then
+// forwards them unchanged, so prefixless alias recovery can never rewrite a
+// server tool whose name happens to equal an alias tail.
+func recordDeclaredServerTools(recordRename func(original, renamed string), forwardMap map[string]string, protectedNames map[string]bool) {
+	if len(forwardMap) == 0 {
+		return
+	}
+	for name := range protectedNames {
+		if name != "" {
+			recordRename(name, name)
+		}
 	}
 }
 
