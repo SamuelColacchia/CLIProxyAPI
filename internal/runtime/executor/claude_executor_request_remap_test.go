@@ -1220,3 +1220,38 @@ func TestReverseRemapOAuthToolNamesRecoversPrefixlessAlias(t *testing.T) {
 		t.Fatalf("restored declared tool %q as %q, want it unchanged", bare, got)
 	}
 }
+
+func TestReverseRemapOAuthToolNamesPrefixlessKeepsDeclaredServerTools(t *testing.T) {
+	// This secret gives the custom "search" tool an alias whose tail is exactly
+	// the declared server tool name "web_search".
+	body := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"},{"name":"search"}]}`)
+	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "collision-3897"})
+	if got := gjson.GetBytes(remapped, "tools.1.name").String(); got != "mcp__modify_quick__web_search" {
+		t.Fatalf("search alias = %q, want the colliding mcp__modify_quick__web_search", got)
+	}
+	if got := restoreToolUseName(t, "web_search", reverseMap); got != "web_search" {
+		t.Fatalf("restored declared server tool as %q, want web_search", got)
+	}
+	if got := restoreToolUseName(t, "modify_quick__web_search", reverseMap); got != "search" {
+		t.Fatalf("restored alias missing mcp__ as %q, want search", got)
+	}
+}
+
+func TestReverseRemapOAuthToolNamesPrefixlessRejectsAmbiguousForms(t *testing.T) {
+	// This secret makes "current_leave__glass_eval" both eval's alias without
+	// "mcp__" and the other tool's alias without "mcp__current_leave__".
+	body := []byte(`{"tools":[{"name":"eval"},{"name":"leave__glass_eval"}]}`)
+	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "collision-1637"})
+	if got := gjson.GetBytes(remapped, "tools.0.name").String(); got != "mcp__current_leave__glass_eval" {
+		t.Fatalf("eval alias = %q, want mcp__current_leave__glass_eval", got)
+	}
+	if got := gjson.GetBytes(remapped, "tools.1.name").String(); got != "mcp__current_leave__current_leave__glass_eval" {
+		t.Fatalf("other alias = %q, want mcp__current_leave__current_leave__glass_eval", got)
+	}
+	if got := restoreToolUseName(t, "current_leave__glass_eval", reverseMap); got != "current_leave__glass_eval" {
+		t.Fatalf("restored ambiguous name as %q, want it unchanged", got)
+	}
+	if got := restoreToolUseName(t, "glass_eval", reverseMap); got != "eval" {
+		t.Fatalf("restored unambiguous tail as %q, want eval", got)
+	}
+}
