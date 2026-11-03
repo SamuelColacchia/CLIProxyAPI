@@ -1176,8 +1176,8 @@ func restoreToolUseName(t *testing.T, name string, reverseMap map[string]string)
 	if errStream != nil {
 		t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine(%q) error = %v", name, errStream)
 	}
-	got := gjson.GetBytes(restored, "content.0.name").String()
-	if gotStream := gjson.GetBytes(helps.JSONPayload(restoredLine), "content_block.name").String(); gotStream != got {
+	got := ojson.GetBytes(restored, "content.0.name").String()
+	if gotStream := ojson.GetBytes(helps.JSONPayload(restoredLine), "content_block.name").String(); gotStream != got {
 		t.Fatalf("stream restored %q as %q, non-stream as %q", name, gotStream, got)
 	}
 	return got
@@ -1187,7 +1187,7 @@ func TestReverseRemapOAuthToolNamesRecoversPrefixlessAlias(t *testing.T) {
 	secret := "prefixless-alias-caller"
 	body := []byte(`{"tools":[{"name":"eval"},{"name":"read"}]}`)
 	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: secret})
-	evalAlias := gjson.GetBytes(remapped, "tools.0.name").String()
+	evalAlias := ojson.GetBytes(remapped, "tools.0.name").String()
 	parts, ok := parseClaudeMCPAlias(evalAlias)
 	if !ok {
 		t.Fatalf("eval alias is invalid: %q", evalAlias)
@@ -1213,7 +1213,7 @@ func TestReverseRemapOAuthToolNamesRecoversPrefixlessAlias(t *testing.T) {
 	// its own name: the caller's declaration wins over prefix recovery.
 	collidingBody := []byte(fmt.Sprintf(`{"tools":[{"name":"eval"},{"name":%q}]}`, bare))
 	collidingRemapped, collidingMap := remapOAuthToolNamesWithOptions(collidingBody, claudeMCPAliasOptions{secret: secret})
-	if got := gjson.GetBytes(collidingRemapped, "tools.0.name").String(); got != evalAlias {
+	if got := ojson.GetBytes(collidingRemapped, "tools.0.name").String(); got != evalAlias {
 		t.Fatalf("eval alias changed between requests: %q != %q", got, evalAlias)
 	}
 	if got := restoreToolUseName(t, bare, collidingMap); got != bare {
@@ -1226,7 +1226,7 @@ func TestReverseRemapOAuthToolNamesPrefixlessKeepsDeclaredServerTools(t *testing
 	// the declared server tool name "web_search".
 	body := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"},{"name":"search"}]}`)
 	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "collision-3897"})
-	if got := gjson.GetBytes(remapped, "tools.1.name").String(); got != "mcp__modify_quick__web_search" {
+	if got := ojson.GetBytes(remapped, "tools.1.name").String(); got != "mcp__modify_quick__web_search" {
 		t.Fatalf("search alias = %q, want the colliding mcp__modify_quick__web_search", got)
 	}
 	if got := restoreToolUseName(t, "web_search", reverseMap); got != "web_search" {
@@ -1242,10 +1242,10 @@ func TestReverseRemapOAuthToolNamesPrefixlessRejectsAmbiguousForms(t *testing.T)
 	// "mcp__" and the other tool's alias without "mcp__current_leave__".
 	body := []byte(`{"tools":[{"name":"eval"},{"name":"leave__glass_eval"}]}`)
 	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "collision-1637"})
-	if got := gjson.GetBytes(remapped, "tools.0.name").String(); got != "mcp__current_leave__glass_eval" {
+	if got := ojson.GetBytes(remapped, "tools.0.name").String(); got != "mcp__current_leave__glass_eval" {
 		t.Fatalf("eval alias = %q, want mcp__current_leave__glass_eval", got)
 	}
-	if got := gjson.GetBytes(remapped, "tools.1.name").String(); got != "mcp__current_leave__current_leave__glass_eval" {
+	if got := ojson.GetBytes(remapped, "tools.1.name").String(); got != "mcp__current_leave__current_leave__glass_eval" {
 		t.Fatalf("other alias = %q, want mcp__current_leave__current_leave__glass_eval", got)
 	}
 	if got := restoreToolUseName(t, "current_leave__glass_eval", reverseMap); got != "current_leave__glass_eval" {
